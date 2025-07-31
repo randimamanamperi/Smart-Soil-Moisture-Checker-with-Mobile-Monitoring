@@ -15,12 +15,12 @@ This project uses two ESP32 modules to monitor soil moisture, temperature, and h
 
 
 🔧 Hardware
-ESP32 board (x2)             
-Capacitive Soil Moisture Sensor
-DHT11 Sensor                   
-LED (Pump Simulation)          
-Power Supply (USB)             
-Wi-Fi Network (Hospot or Wifi)               
+- ESP32 board (x2)             
+- Capacitive Soil Moisture Sensor
+- DHT11 Sensor                   
+- LED (Pump Simulation)          
+- Power Supply (USB)             
+- Wi-Fi Network (Hospot or Wifi)               
 
 🛰️ Communication & Protocol
 
