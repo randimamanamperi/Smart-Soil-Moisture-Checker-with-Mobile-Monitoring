@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ESP32 Soil Sensor MQTT Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 30px;
+      background: #f2f2f2;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    #status {
+      text-align: center;
+      font-weight: bold;
+      margin-bottom: 20px;
+      color: green;
+    }
+    .sensor-data {
+      background: white;
+      max-width: 450px;
+      margin: 0 auto;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 12px rgba(0,0,0,0.1);
+    }
+    .sensor-item {
+      margin: 20px 0;
+    }
+    .label {
+      font-weight: bold;
+      margin-bottom: 6px;
+      display: block;
+    }
+    .value {
+      font-size: 1.4em;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 20px;
+      background-color: #eee;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 10px;
+      transition: width 0.5s ease;
+    }
+    .dry { background-color: #e74c3c !important; }      /* red */
+    .moderate { background-color: #f1c40f !important; } /* yellow */
+    .moist { background-color: #27ae60 !important; }   /* green */
+    .cold { background-color: #3498db !important; }    /* blue */
+    .hot { background-color: #e67e22 !important; }     /* orange */
+  </style>
+</head>
+<body>
+
+  <h1>ESP32 Soil Sensor Dashboard</h1>
+  <div id="status">Connecting to MQTT broker...</div>
+
+  <div class="sensor-data">
+
+    <div class="sensor-item">
+      <span class="label">Soil Moisture</span>
+      <span id="moistureVal" class="value">--</span>
+      <div class="progress-bar"><div id="moistureBar" class="progress-fill"></div></div>
+    </div>
+
+    <div class="sensor-item">
+      <span class="label">Temperature (°C)</span>
+      <span id="temperatureVal" class="value">--</span>
+      <div class="progress-bar"><div id="temperatureBar" class="progress-fill"></div></div>
+    </div>
+
+    <div class="sensor-item">
+      <span class="label">Humidity (%)</span>
+      <span id="humidityVal" class="value">--</span>
+      <div class="progress-bar"><div id="humidityBar" class="progress-fill"></div></div>
+    </div>
+
+  </div>
+
+  <!-- Load Paho MQTT JavaScript client -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.1.0/paho-mqtt.min.js"></script>
+  <script>
+    // Update these according to your setup
+    const broker = 'broker.hivemq.com';   // MQTT broker address
+    const port = 8000;                     // MQTT broker WebSocket port (non-SSL WebSocket for HiveMQ)
+    const topic = 'esp32/soilSensorData'; // MQTT topic subscribed to
+
+    const clientID = 'webClient-' + Math.floor(Math.random() * 100000);
+    // Use new Paho.Client (not Paho.MQTT.Client)
+    const client = new Paho.Client(broker, port, clientID);
+
+    function onConnect() {
+      document.getElementById('status').textContent = 'Connected to MQTT broker!';
+      document.getElementById('status').style.color = 'green';
+      client.subscribe(topic);
+      console.log("Subscribed to topic:", topic);
+    }
+
+    function onConnectionLost(responseObject) {
+      document.getElementById('status').textContent = 'Connection lost. Reconnecting...';
+      document.getElementById('status').style.color = 'red';
+      if (responseObject.errorCode !== 0) {
+        console.error("Connection lost error:", responseObject.errorMessage);
+      }
+    }
+
+    // Update progress bar width and color based on thresholds
+    function updateProgressBar(elementId, value, max, thresholds) {
+      const bar = document.getElementById(elementId);
+      const percent = Math.min(100, Math.max(0, (value / max) * 100));
+      bar.style.width = percent + '%';
+
+      for(let i = 0; i < thresholds.length; i++) {
+        if(value <= thresholds[i].threshold) {
+          bar.className = 'progress-fill ' + thresholds[i].className;
+          return;
+        }
+      }
+      bar.className = 'progress-fill ' + thresholds[thresholds.length-1].className;
+    }
+
+    function onMessageArrived(message) {
+      console.log("Message arrived:", message.payloadString);
+      try {
+        const data = JSON.parse(message.payloadString);
+
+        if('moisture_level' in data) {
+          const moisture = data.moisture_level;
+          document.getElementById('moistureVal').textContent = moisture;
+          // Thresholds for soil moisture ADC reading (~0-4095)
+          updateProgressBar('moistureBar', moisture, 4095, [
+            {threshold: 300, className: 'dry'},
+            {threshold: 1500, className: 'moderate'},
+            {threshold: 4095, className: 'moist'}
+          ]);
+        }
+
+        if('temperature' in data) {
+          const temp = data.temperature;
+          document.getElementById('temperatureVal').textContent = temp.toFixed(1);
+          // Temperature thresholds in °C example
+          updateProgressBar('temperatureBar', temp, 50, [
+            {threshold: 10, className: 'cold'},
+            {threshold: 30, className: 'moist'},
+            {threshold: 50, className: 'hot'}
+          ]);
+        }
+
+        if('humidity' in data) {
+          const humidity = data.humidity;
+          document.getElementById('humidityVal').textContent = humidity.toFixed(1);
+          // Humidity thresholds in %
+          updateProgressBar('humidityBar', humidity, 100, [
+            {threshold: 30, className: 'dry'},
+            {threshold: 60, className: 'moderate'},
+            {threshold: 100, className: 'moist'}
+          ]);
+        }
+      } catch (e) {
+        console.error('JSON Parse Error:', e);
+      }
+    }
+
+    client.onConnectionLost = onConnectionLost;
+    client.onMessageArrived = onMessageArrived;
+
+    client.connect({
+      onSuccess: onConnect,
+      useSSL: false, // false because we're using non-SSL WS port 8000 on HiveMQ
+      timeout: 3,
+      reconnect: true
+    });
+  </script>
+</body>
+</html>
